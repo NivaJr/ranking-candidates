@@ -29,11 +29,26 @@ export default async function Home({ searchParams }: PageProps) {
   const params = await searchParams
   let candidatos: Candidato[] = []
   let error: string | null = null
+  let isQuotaError = false
 
   try {
     candidatos = await getCandidatos()
+    
+    // Se retornou array vazio, pode ser erro de quota
+    if (candidatos.length === 0) {
+      isQuotaError = true
+      error = "Limite de tráfego atingido. Tente novamente em 1 minuto"
+    }
   } catch (err) {
-    error = err instanceof Error ? err.message : "Erro ao carregar dados"
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    
+    // Verificar se é erro de quota
+    if (errorMessage.includes("429") || errorMessage.includes("Quota") || errorMessage.includes("quota")) {
+      isQuotaError = true
+      error = "Limite de tráfego atingido. Tente novamente em 1 minuto"
+    } else {
+      error = errorMessage || "Erro ao carregar dados"
+    }
   }
 
   // Filtrar por cargo se especificado (normalizando para comparação)
@@ -75,9 +90,27 @@ export default async function Home({ searchParams }: PageProps) {
         </div>
 
         {error ? (
-          <Card className="border-destructive">
+          <Card className={isQuotaError ? "border-yellow-500/50 bg-yellow-500/10" : "border-destructive"}>
             <CardContent className="pt-6">
-              <p className="text-destructive">{error}</p>
+              <p className={isQuotaError ? "text-yellow-600 dark:text-yellow-400 font-medium" : "text-destructive"}>
+                {isQuotaError ? "⚠️ " : ""}{error}
+              </p>
+              {isQuotaError && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  O cache será atualizado automaticamente em até 60 segundos. Você também pode clicar no botão de refresh.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : candidatos.length === 0 ? (
+          <Card className="border-yellow-500/50 bg-yellow-500/10">
+            <CardContent className="pt-6">
+              <p className="text-yellow-600 dark:text-yellow-400 font-medium">
+                ⚠️ Limite de tráfego atingido. Tente novamente em 1 minuto
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                O cache será atualizado automaticamente em até 60 segundos. Você também pode clicar no botão de refresh.
+              </p>
             </CardContent>
           </Card>
         ) : (

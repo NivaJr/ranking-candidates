@@ -27,7 +27,8 @@ export const getCandidatos = cache(async (): Promise<Candidato[]> => {
     const sheetId = process.env.GOOGLE_SHEET_ID
 
     if (!serviceAccountEmail || !privateKey || !sheetId) {
-      throw new Error("Variáveis de ambiente do Google Sheets não configuradas")
+      console.error("[Google Sheets] Variáveis de ambiente não configuradas")
+      return []
     }
 
     // Autenticação
@@ -39,7 +40,41 @@ export const getCandidatos = cache(async (): Promise<Candidato[]> => {
 
     // Inicializar a planilha
     const doc = new GoogleSpreadsheet(sheetId, serviceAccountAuth)
-    await doc.loadInfo()
+    
+    try {
+      await doc.loadInfo()
+    } catch (apiError: any) {
+      // Verificar se é erro de quota (429) ou permissão (403)
+      const statusCode = apiError?.response?.status || apiError?.code
+      const errorMessage = apiError?.message || String(apiError)
+      
+      if (statusCode === 429 || errorMessage.includes("429") || errorMessage.includes("Quota")) {
+        console.error("[Google Sheets] Erro 429 - Quota exceeded:", {
+          message: errorMessage,
+          statusCode,
+          timestamp: new Date().toISOString(),
+        })
+        return [] // Retorna array vazio ao invés de crashar
+      }
+      
+      if (statusCode === 403 || errorMessage.includes("403") || errorMessage.includes("Permission")) {
+        console.error("[Google Sheets] Erro 403 - Permission denied:", {
+          message: errorMessage,
+          statusCode,
+          timestamp: new Date().toISOString(),
+        })
+        return [] // Retorna array vazio ao invés de crashar
+      }
+      
+      // Outros erros também retornam array vazio
+      console.error("[Google Sheets] Erro ao carregar planilha:", {
+        message: errorMessage,
+        statusCode,
+        error: apiError,
+        timestamp: new Date().toISOString(),
+      })
+      return []
+    }
 
     // Percorrer todas as abas da planilha
     const todasAsAbas = doc.sheetsByIndex
@@ -69,13 +104,32 @@ export const getCandidatos = cache(async (): Promise<Candidato[]> => {
         todosCandidatos.push(...candidatosDaAba)
       } catch (error) {
         // Se houver erro ao ler uma aba, registra mas continua com as outras
-        console.warn(`Erro ao ler aba "${sheet.title}":`, error)
+        console.warn(`[Google Sheets] Erro ao ler aba "${sheet.title}":`, error)
       }
     }
 
     return todosCandidatos
-  } catch (error) {
-    console.error("Erro ao buscar dados do Google Sheets:", error)
-    throw error
+  } catch (error: any) {
+    // Tratamento geral de erros
+    const statusCode = error?.response?.status || error?.code
+    const errorMessage = error?.message || String(error)
+    
+    if (statusCode === 429 || errorMessage.includes("429") || errorMessage.includes("Quota")) {
+      console.error("[Google Sheets] Erro 429 - Quota exceeded (catch geral):", {
+        message: errorMessage,
+        statusCode,
+        error,
+        timestamp: new Date().toISOString(),
+      })
+      return [] // Retorna array vazio ao invés de crashar
+    }
+    
+    console.error("[Google Sheets] Erro geral ao buscar dados:", {
+      message: errorMessage,
+      statusCode,
+      error,
+      timestamp: new Date().toISOString(),
+    })
+    return [] // Retorna array vazio ao invés de crashar
   }
 })
